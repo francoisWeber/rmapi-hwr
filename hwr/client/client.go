@@ -31,14 +31,23 @@ func SendRequest(key, hmackey string, data []byte, mimeType string) (body []byte
 	if err != nil {
 		return
 	}
+	defer res.Body.Close()
+	
 	body, err = ioutil.ReadAll(res.Body)
 	if err != nil {
 		return
 	}
 
+	// Log response headers for debugging
 	if res.StatusCode != http.StatusOK {
-		err = fmt.Errorf("Not ok, Status: %d", res.StatusCode)
+		err = fmt.Errorf("Not ok, Status: %d, Response: %s", res.StatusCode, string(body))
 		return
+	}
+	
+	// Log content type to see what format we actually got
+	contentType := res.Header.Get("Content-Type")
+	if contentType != "" {
+		fmt.Printf("Response Content-Type: %s\n", contentType)
 	}
 
 	return body, nil
