@@ -20,6 +20,129 @@ import (
 
 var NoContent = errors.New("no page content")
 
+// RawExtractedData represents the raw structure extracted from .rm files
+// This is the shape that rmapi extracts before conversion to MyScript format
+type RawExtractedData struct {
+	Version int                    `json:"version"`
+	Layers  []RawExtractedLayer    `json:"layers"`
+}
+
+type RawExtractedLayer struct {
+	Lines []RawExtractedLine `json:"lines"`
+}
+
+type RawExtractedLine struct {
+	BrushType  uint32          `json:"brushType"`
+	BrushColor uint32          `json:"brushColor"`
+	Padding    uint32          `json:"padding"`
+	Unknown    float32         `json:"unknown"`
+	BrushSize  float32         `json:"brushSize"`
+	Points     []RawExtractedPoint `json:"points"`
+}
+
+type RawExtractedPoint struct {
+	X         float32 `json:"x"`
+	Y         float32 `json:"y"`
+	Speed     float32 `json:"speed"`
+	Direction float32 `json:"direction"`
+	Width     float32 `json:"width"`
+	Pressure  float32 `json:"pressure"`
+}
+
+// OutputRawExtractedData outputs the raw extracted data structure from rmapi
+// before it's converted to MyScript format
+func OutputRawExtractedData(zip *archive.Zip, pageNumber int, outputFile string) error {
+	numPages := len(zip.Pages)
+	
+	if pageNumber >= numPages || pageNumber < 0 {
+		return fmt.Errorf("page %d outside range, max: %d", pageNumber, numPages)
+	}
+	
+	page := zip.Pages[pageNumber]
+	
+	if page.Data == nil {
+		return NoContent
+	}
+	
+	// Convert rm.Rm structure to our JSON-friendly structure
+	rawData := RawExtractedData{
+		Version: int(page.Data.Version),
+		Layers:  make([]RawExtractedLayer, len(page.Data.Layers)),
+	}
+	
+	for layerIdx, rmLayer := range page.Data.Layers {
+		layer := RawExtractedLayer{
+			Lines: make([]RawExtractedLine, len(rmLayer.Lines)),
+		}
+		
+		for lineIdx, rmLine := range rmLayer.Lines {
+			line := RawExtractedLine{
+				BrushType:  uint32(rmLine.BrushType),
+				BrushColor: uint32(rmLine.BrushColor),
+				Padding:    rmLine.Padding,
+				Unknown:    rmLine.Unknown,
+				BrushSize:  float32(rmLine.BrushSize),
+				Points:     make([]RawExtractedPoint, len(rmLine.Points)),
+			}
+			
+			for pointIdx, rmPoint := range rmLine.Points {
+				line.Points[pointIdx] = RawExtractedPoint{
+					X:         rmPoint.X,
+					Y:         rmPoint.Y,
+					Speed:     rmPoint.Speed,
+					Direction: rmPoint.Direction,
+					Width:     rmPoint.Width,
+					Pressure:  rmPoint.Pressure,
+				}
+			}
+			
+			layer.Lines[lineIdx] = line
+		}
+		
+		rawData.Layers[layerIdx] = layer
+	}
+	
+	// Marshal to JSON
+	jsonData, err := json.MarshalIndent(rawData, "", "  ")
+	if err != nil {
+		return fmt.Errorf("can't marshal raw data to JSON: %w", err)
+	}
+	
+	// Write to file
+	if outputFile == "" {
+		outputFile = fmt.Sprintf("raw_extracted_page_%d.json", pageNumber)
+	}
+	
+	err = os.WriteFile(outputFile, jsonData, 0644)
+	if err != nil {
+		return fmt.Errorf("can't write output file: %w", err)
+	}
+	
+	log.Printf("Page %d: Raw extracted data saved to %s", pageNumber, outputFile)
+	log.Printf("Page %d: Version=%d, Layers=%d, TotalLines=%d, TotalPoints=%d",
+		pageNumber,
+		rawData.Version,
+		len(rawData.Layers),
+		func() int {
+			total := 0
+			for _, layer := range rawData.Layers {
+				total += len(layer.Lines)
+			}
+			return total
+		}(),
+		func() int {
+			total := 0
+			for _, layer := range rawData.Layers {
+				for _, line := range layer.Lines {
+					total += len(line.Points)
+				}
+			}
+			return total
+		}())
+	
+	return nil
+}
+
 type Config struct {
 	Page           int
 	applicationKey string
@@ -30,6 +153,8 @@ type Config struct {
 	OutputFile     string
 	AddPages       bool
 	BatchSize      int64
+	DebugRawData   bool // Output raw extracted data before conversion
+	SplitPages     bool // Output each page to a separate file
 }
 
 func getJson(zip *archive.Zip, contenttype string, lang string, pageNumber int) (r []byte, err error) {
@@ -169,6 +294,32 @@ func getJson(zip *archive.Zip, contenttype string, lang string, pageNumber int) 
 }
 
 func Hwr(zip *archive.Zip, cfg Config) {
+	// If debug mode is enabled, output raw extracted data before conversion
+	if cfg.DebugRawData {
+		capacity := 1
+		start := 0
+		var end int
+
+		if cfg.Page == 0 {
+			start = zip.Content.LastOpenedPage
+			end = start
+		} else if cfg.Page < 0 {
+			capacity = len(zip.Pages)
+			end = capacity - 1
+		} else {
+			start = cfg.Page - 1
+			end = start
+		}
+
+		for p := start; p <= end; p++ {
+			outputFile := fmt.Sprintf("%s_raw_page_%d.json", cfg.OutputFile, p)
+			if err := OutputRawExtractedData(zip, p, outputFile); err != nil {
+				log.Printf("Warning: Failed to output raw data for page %d: %v", p, err)
+			}
+		}
+		return
+	}
+
 	applicationKey := os.Getenv("RMAPI_HWR_APPLICATIONKEY")
 	if applicationKey == "" {
 		log.Fatal("provide the myScript applicationKey in: RMAPI_HWR_APPLICATIONKEY")
@@ -178,7 +329,6 @@ func Hwr(zip *archive.Zip, cfg Config) {
 		log.Fatal("provide the myScript hmac in: RMAPI_HWR_HMAC")
 	}
 
-	capacity := 1
 	start := 0
 	var end int
 
@@ -186,13 +336,13 @@ func Hwr(zip *archive.Zip, cfg Config) {
 		start = zip.Content.LastOpenedPage
 		end = start
 	} else if cfg.Page < 0 {
-		capacity = len(zip.Pages)
-		end = capacity - 1
+		end = len(zip.Pages) - 1
 	} else {
 		start = cfg.Page - 1
 		end = start
 	}
-	result := make([][]byte, capacity)
+	// Result array needs to be large enough to hold all pages (indexed by page number)
+	result := make([][]byte, len(zip.Pages))
 
 	contenttype, output := setContentType(cfg.InputType)
 
@@ -276,20 +426,49 @@ func Hwr(zip *archive.Zip, cfg Config) {
 
 	if cfg.OutputFile == "-" {
 		dump(result, cfg.AddPages)
+	} else if cfg.SplitPages {
+		// Create separate file for each page
+		log.Printf("Split mode: Processing %d pages from result array (size: %d)", len(result), len(result))
+		filesCreated := 0
+		for pageNum, c := range result {
+			if c == nil || len(c) == 0 {
+				log.Printf("Skipping page %d: nil or empty content", pageNum)
+				continue
+			}
+			outputFile := fmt.Sprintf("%s_page_%d.txt", cfg.OutputFile, pageNum)
+			f, err := os.Create(outputFile)
+			if err != nil {
+				log.Printf("Error creating file %s: %v", outputFile, err)
+				continue
+			}
+			text := extractTextFromResponse(c, output)
+			f.WriteString(text)
+			f.Close()
+			filesCreated++
+			log.Printf("Page %d: Saved to %s (%d bytes)", pageNum, outputFile, len(text))
+		}
+		log.Printf("Split mode: Created %d separate files", filesCreated)
 	} else {
-		//text file
+		// Single text file with all pages
 		f, err := os.Create(cfg.OutputFile + ".txt")
 		if err != nil {
 			dump(result, cfg.AddPages)
 			log.Fatal(err)
 		}
 
-		for _, c := range result {
+		for pageNum, c := range result {
+			if c == nil || len(c) == 0 {
+				continue
+			}
+			if cfg.AddPages {
+				f.WriteString(fmt.Sprintf("=== Page %d ===\n", pageNum))
+			}
 			text := extractTextFromResponse(c, output)
 			f.WriteString(text)
 			f.Write([]byte("\n"))
 		}
 		f.Close()
+		log.Printf("All pages saved to %s.txt", cfg.OutputFile)
 	}
 }
 
