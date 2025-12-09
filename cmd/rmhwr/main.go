@@ -535,6 +535,7 @@ func main() {
 		fmt.Fprintf(output, "Usage: %s [options] somefile.zip\n", exec)
 		fmt.Fprintln(output, "\twhere somefile.zip is what you got with rmapi get")
 		fmt.Fprintln(output, "\tOutputs: Text->text, Math->LaTex, Diagram->svg")
+		fmt.Fprintln(output, "\tUse -debug-raw to output raw extracted data structure before MyScript conversion")
 		fmt.Fprintln(output, "Options:")
 		flag.PrintDefaults()
 	}
@@ -546,14 +547,20 @@ func main() {
 	var addPages = flag.Bool("a", false, "add page headers")
 	var visualize = flag.Bool("visualize", false, "render strokes to PNG for debugging (saves to <filename>_page_<N>.png)")
 	var forceStandardParser = flag.Bool("force-standard", false, "force using standard rmapi parser (skip new format parser)")
-	cfg := hwr.Config{
-		Page:      *page,
-		Lang:      *lang,
-		InputType: *inputType,
-		AddPages:  *addPages,
-		BatchSize: *flag.Int64("b", 3, "batch size"),
-	}
+	var debugRawData = flag.Bool("debug-raw", false, "output raw extracted data structure before MyScript conversion (saves to <filename>_raw_page_<N>.json)")
+	var splitPages = flag.Bool("split", false, "output each page to a separate .txt file (saves to <filename>_page_<N>.txt)")
+	var batchSize = flag.Int64("b", 3, "batch size")
 	flag.Parse()
+	
+	cfg := hwr.Config{
+		Page:         *page,
+		Lang:         *lang,
+		InputType:    *inputType,
+		AddPages:     *addPages,
+		BatchSize:    *batchSize,
+		DebugRawData: *debugRawData,
+		SplitPages:   *splitPages,
+	}
 
 	args := flag.Args()
 	if len(args) < 1 {
