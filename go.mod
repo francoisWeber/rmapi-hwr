@@ -2,6 +2,8 @@ module github.com/ddvk/rmapi-hwr
 
 go 1.23
 
+replace github.com/juruen/rmapi => /rmapi
+
 require (
 	github.com/go-openapi/errors v0.20.3
 	github.com/go-openapi/strfmt v0.21.3
