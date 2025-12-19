@@ -217,37 +217,78 @@ func (s *Server) handleHWR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse multipart form
-	err := r.ParseMultipartForm(maxFileSize)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error parsing form: %v", err), http.StatusBadRequest)
-		return
+	var fileData []byte
+	var filename string
+	var err error
+
+	// Check if request is multipart/form-data or raw binary
+	contentType := r.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		// Parse multipart form
+		err = r.ParseMultipartForm(maxFileSize)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error parsing form: %v", err), http.StatusBadRequest)
+			return
+		}
+
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error getting file: %v", err), http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+
+		filename = header.Filename
+
+		// Read file into memory
+		fileData, err = io.ReadAll(file)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error reading file: %v", err), http.StatusInternalServerError)
+			return
+		}
+	} else {
+		// Raw binary data (for n8n binary objects)
+		fileData, err = io.ReadAll(io.LimitReader(r.Body, maxFileSize))
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error reading request body: %v", err), http.StatusBadRequest)
+			return
+		}
+		if len(fileData) == 0 {
+			http.Error(w, "Empty request body", http.StatusBadRequest)
+			return
+		}
+		// Try to get filename from Content-Disposition header or use default
+		contentDisposition := r.Header.Get("Content-Disposition")
+		if contentDisposition != "" {
+			// Extract filename from Content-Disposition: attachment; filename="file.rmdoc"
+			if idx := strings.Index(contentDisposition, "filename="); idx != -1 {
+				filename = strings.Trim(contentDisposition[idx+9:], `"`)
+			}
+		}
+		if filename == "" {
+			filename = "input.rmdoc"
+		}
 	}
 
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error getting file: %v", err), http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
-	// Read file into memory
-	fileData, err := io.ReadAll(file)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error reading file: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	// Get optional parameters
+	// Get optional parameters (from form values or query parameters)
 	inputType := r.FormValue("type")
+	if inputType == "" {
+		inputType = r.URL.Query().Get("type")
+	}
 	if inputType == "" {
 		inputType = "Text"
 	}
 	lang := r.FormValue("lang")
 	if lang == "" {
+		lang = r.URL.Query().Get("lang")
+	}
+	if lang == "" {
 		lang = "en_US"
 	}
 	pageStr := r.FormValue("page")
+	if pageStr == "" {
+		pageStr = r.URL.Query().Get("page")
+	}
 	page := -1
 	if pageStr != "" {
 		if p, err := strconv.Atoi(pageStr); err == nil {
@@ -292,7 +333,7 @@ func (s *Server) handleHWR(w http.ResponseWriter, r *http.Request) {
 	// Return result as JSON
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"filename": header.Filename,
+		"filename": filename,
 		"pages":    len(zipArchive.Pages),
 		"text":     result,
 	})
@@ -476,29 +517,64 @@ func (s *Server) handleConvert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse multipart form
-	err := r.ParseMultipartForm(maxFileSize)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error parsing form: %v", err), http.StatusBadRequest)
-		return
+	var fileData []byte
+	var filename string
+	var err error
+
+	// Check if request is multipart/form-data or raw binary
+	contentType := r.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		// Parse multipart form
+		err = r.ParseMultipartForm(maxFileSize)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error parsing form: %v", err), http.StatusBadRequest)
+			return
+		}
+
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error getting file: %v", err), http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+
+		filename = header.Filename
+
+		// Read file into memory
+		fileData, err = io.ReadAll(file)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error reading file: %v", err), http.StatusInternalServerError)
+			return
+		}
+	} else {
+		// Raw binary data (for n8n binary objects)
+		fileData, err = io.ReadAll(io.LimitReader(r.Body, maxFileSize))
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error reading request body: %v", err), http.StatusBadRequest)
+			return
+		}
+		if len(fileData) == 0 {
+			http.Error(w, "Empty request body", http.StatusBadRequest)
+			return
+		}
+		// Try to get filename from Content-Disposition header or use default
+		contentDisposition := r.Header.Get("Content-Disposition")
+		if contentDisposition != "" {
+			// Extract filename from Content-Disposition: attachment; filename="file.rmdoc"
+			if idx := strings.Index(contentDisposition, "filename="); idx != -1 {
+				filename = strings.Trim(contentDisposition[idx+9:], `"`)
+			}
+		}
+		if filename == "" {
+			filename = "input.rmdoc"
+		}
 	}
 
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error getting file: %v", err), http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
-	// Read file into memory
-	fileData, err := io.ReadAll(file)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error reading file: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	// Get optional page parameter
+	// Get optional page parameter (from form values or query parameters)
 	pageStr := r.FormValue("page")
+	if pageStr == "" {
+		pageStr = r.URL.Query().Get("page")
+	}
 	page := -1
 	if pageStr != "" {
 		if p, err := strconv.Atoi(pageStr); err == nil {
@@ -652,7 +728,11 @@ func (s *Server) handleConvert(w http.ResponseWriter, r *http.Request) {
 
 	// Return zip file
 	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s_pages.zip", strings.TrimSuffix(header.Filename, filepath.Ext(header.Filename))))
+	baseFilename := strings.TrimSuffix(filename, filepath.Ext(filename))
+	if baseFilename == "" {
+		baseFilename = "input"
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s_pages.zip", baseFilename))
 	w.Write(zipBuffer.Bytes())
 }
 

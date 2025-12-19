@@ -5,11 +5,15 @@ RUN apk add --no-cache git
 
 WORKDIR /src
 
+# Clone the latest version of rmapi from your fork
+# This ensures we always get the latest version from francoisWeber/rmapi master branch
+RUN git clone --depth 1 https://github.com/francoisWeber/rmapi.git /rmapi
+
 # Copy go mod files for dependency caching
 COPY go.mod go.sum ./
 
 # Download dependencies (this layer will be cached unless go.mod/go.sum change)
-# Go will automatically download rmapi from GitHub (francoisWeber/rmapi via replace directive)
+# Go will use the local /rmapi directory via the replace directive
 RUN go mod download
 
 COPY . ./
