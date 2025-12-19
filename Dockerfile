@@ -1,7 +1,12 @@
 FROM golang:1.23-alpine AS builder
 
-# Install git for cloning dependencies
+# Install git to clone rmapi repository
 RUN apk add --no-cache git
+
+# Clone rmapi repository (needed for replace directive: ../rmapi)
+# This goes to /rmapi to match the replace directive path from /src
+RUN git clone --depth 1 https://github.com/francoisWeber/rmapi.git /rmapi
+
 
 WORKDIR /src
 
@@ -12,7 +17,6 @@ COPY go.mod go.sum ./
 # Go will automatically download rmapi from GitHub
 RUN go mod download
 
-# Copy the rest of the source code
 COPY . ./
 
 # Build the server application
