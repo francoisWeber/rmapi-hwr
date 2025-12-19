@@ -7,14 +7,16 @@ RUN apk add --no-cache git
 # This goes to /rmapi to match the replace directive path from /src
 RUN git clone --depth 1 https://github.com/francoisWeber/rmapi.git /rmapi
 
+
 WORKDIR /src
 
 # Copy go mod files for dependency caching
 COPY go.mod go.sum ./
+
 # Download dependencies (this layer will be cached unless go.mod/go.sum change)
+# Go will automatically download rmapi from GitHub
 RUN go mod download
 
-# Copy the rest of the rmapi-hwr source code
 COPY . ./
 
 # Build the server application

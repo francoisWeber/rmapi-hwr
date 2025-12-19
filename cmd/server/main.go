@@ -20,7 +20,6 @@ import (
 	"github.com/ddvk/rmapi-hwr/hwr/models"
 	"github.com/juruen/rmapi/archive"
 	"github.com/juruen/rmapi/encoding/rm"
-	"github.com/juruen/rmapi/visualize"
 )
 
 const (
@@ -564,7 +563,7 @@ func (s *Server) handleConvert(w http.ResponseWriter, r *http.Request) {
 
 		outputPNG := filepath.Join(tempDir, fmt.Sprintf("page_%d.png", p))
 		log.Printf("Converting page %d to PNG: %s", p, outputPNG)
-		err := visualize.VisualizePage(zipArchive, p, outputPNG)
+		err := hwr.VisualizePage(zipArchive, p, outputPNG)
 		if err != nil {
 			log.Printf("Error visualizing page %d: %v", p, err)
 			continue
