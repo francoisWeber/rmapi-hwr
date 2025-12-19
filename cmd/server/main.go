@@ -672,12 +672,13 @@ func (s *Server) Start() error {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	http.HandleFunc("/api/hwr", s.handleHWR)
-	http.HandleFunc("/api/convert", s.handleConvert)
-	http.HandleFunc("/health", s.handleHealth)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/hwr", s.handleHWR)
+	mux.HandleFunc("/api/convert", s.handleConvert)
+	mux.HandleFunc("/health", s.handleHealth)
 
 	log.Printf("Server starting on port %s", s.port)
-	return http.ListenAndServe(":"+s.port, nil)
+	return http.ListenAndServe("0.0.0.0:"+s.port, mux)
 }
 
 func main() {
