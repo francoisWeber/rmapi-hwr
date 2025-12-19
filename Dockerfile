@@ -1,18 +1,21 @@
 FROM golang:1.23-alpine AS builder
 
-# Copy rmapi directory (needed for replace directive: ../rmapi)
+# Install git to clone rmapi repository
+RUN apk add --no-cache git
+
+# Clone rmapi repository (needed for replace directive: ../rmapi)
 # This goes to /rmapi to match the replace directive path from /src
-COPY rmapi/ /rmapi/
+RUN git clone --depth 1 https://github.com/francoisWeber/rmapi.git /rmapi
 
 WORKDIR /src
 
 # Copy go mod files for dependency caching
-COPY rmapi-hwr/go.mod rmapi-hwr/go.sum ./
+COPY go.mod go.sum ./
 # Download dependencies (this layer will be cached unless go.mod/go.sum change)
 RUN go mod download
 
 # Copy the rest of the rmapi-hwr source code
-COPY rmapi-hwr/ ./
+COPY . ./
 
 # Build the server application
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o server ./cmd/server
